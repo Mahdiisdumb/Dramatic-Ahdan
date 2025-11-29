@@ -1,0 +1,18 @@
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\bin\Release\net10.0-windows\Dramitic Ahdan.exe
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\bin\Release\net10.0-windows\Dramitic Ahdan.deps.json
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\bin\Release\net10.0-windows\Dramitic Ahdan.runtimeconfig.json
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\bin\Release\net10.0-windows\Dramitic Ahdan.dll
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\bin\Release\net10.0-windows\Dramitic Ahdan.pdb
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\DramaticAdhan.MainForm.resources
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\DramaticAdhan.WarningForm.resources
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.csproj.GenerateResource.cache
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.AssemblyInfoInputs.cache
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.AssemblyInfo.cs
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.csproj.CoreCompileInputs.cache
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.sourcelink.json
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.dll
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\refint\Dramitic Ahdan.dll
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.pdb
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\Dramitic Ahdan.genruntimeconfig.cache
+C:\Users\Mahdi\source\repos\Dramitic Ahdan\Dramitic Ahdan\obj\Release\net10.0-windows\ref\Dramitic Ahdan.dll
