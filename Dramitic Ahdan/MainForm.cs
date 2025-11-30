@@ -14,6 +14,7 @@ namespace DramaticAdhan
     public partial class MainForm : Form
     {
         private System.Windows.Forms.Timer? uiTimer;
+        private NotifyIcon? notifyIcon;
 
         // UI for countdown
         private readonly Label lblNextPrayer;
@@ -28,9 +29,11 @@ namespace DramaticAdhan
         private readonly List<Image> backgroundImages = new();
         private readonly List<string> wavFiles = new();
 
-        // Settings
+        // Location / settings
         private string city = "Mecca";
         private string country = "Saudi Arabia";
+        private double? latitude;
+        private double? longitude;
 
         // Http client reused
         private static readonly HttpClient httpClient = new();
@@ -86,10 +89,94 @@ namespace DramaticAdhan
             btnSettings.Click += (s, e) => ShowLocationDialog();
             Controls.Add(btnSettings);
 
+            // Tray icon + menu
+            SetupNotifyIcon();
+
             LoadAssets();
-            // Start periodic refresh + UI timer
+
+            // Start background tasks
             StartBackgroundRefresh();
+
+            // Start UI timer
             StartUiTimer();
+
+            // Detect location and refresh on startup (fire-and-forget)
+            _ = DetectLocationAndRefreshAsync();
+
+            // Show a load message then minimize to tray when form is first shown
+            Shown += MainForm_Shown;
+        }
+
+        private void MainForm_Shown(object? sender, EventArgs e)
+        {
+            try
+            {
+                notifyIcon?.ShowBalloonTip(
+                    5000,
+                    "Dramatic Adhan",
+                    "The app is running in the background. Double-click the tray icon to open.",
+                    ToolTipIcon.Info);
+            }
+            catch
+            {
+                // ignore if balloon tip not supported
+            }
+
+            MinimizeToTray();
+        }
+
+        private void SetupNotifyIcon()
+        {
+            notifyIcon = new NotifyIcon
+            {
+                Visible = true,
+                Text = "Dramatic Adhan"
+            };
+
+            // Try to use form icon if present
+            try
+            {
+                if (this.Icon != null) notifyIcon.Icon = this.Icon;
+            }
+            catch { /* ignore */ }
+
+            var ctx = new ContextMenuStrip();
+            var showItem = new ToolStripMenuItem("Show")
+            {
+                Enabled = true
+            };
+            showItem.Click += (s, e) => RestoreFromTray();
+            ctx.Items.Add(showItem);
+
+            var exitItem = new ToolStripMenuItem("Exit");
+            exitItem.Click += (s, e) => Application.Exit();
+            ctx.Items.Add(exitItem);
+
+            notifyIcon.ContextMenuStrip = ctx;
+
+            notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+        }
+
+        private void MinimizeToTray()
+        {
+            try
+            {
+                Hide();
+                ShowInTaskbar = false;
+            }
+            catch { }
+        }
+
+        private void RestoreFromTray()
+        {
+            try
+            {
+                Show();
+                WindowState = FormWindowState.Normal;
+                ShowInTaskbar = true;
+                Activate();
+            }
+            catch { }
         }
 
         private void LoadAssets()
@@ -110,11 +197,7 @@ namespace DramaticAdhan
                              || f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase));
                 foreach (var img in imageFiles)
                 {
-                    try
-                    {
-                        backgroundImages.Add(Image.FromFile(img));
-                    }
-                    catch { }
+                    try { backgroundImages.Add(Image.FromFile(img)); } catch { }
                 }
 
                 var wavs = Directory.EnumerateFiles(assetsDir, "*.wav", SearchOption.TopDirectoryOnly);
@@ -138,7 +221,6 @@ namespace DramaticAdhan
 
         private async Task UpdateCountdownLabelsAsync()
         {
-            // Ensure we have prayer times for today
             if (prayerTimes.Count == 0)
             {
                 await RefreshPrayerTimesAsync().ConfigureAwait(true);
@@ -232,12 +314,60 @@ namespace DramaticAdhan
             }, refreshCts.Token);
         }
 
-        private async Task RefreshPrayerTimesAsync()
+        private async Task DetectLocationAndRefreshAsync()
         {
             try
             {
-                var urlCity = $"https://api.aladhan.com/v1/timingsByCity?city={Uri.EscapeDataString(city)}&country={Uri.EscapeDataString(country)}&method=2";
-                using var resp = await httpClient.GetAsync(urlCity).ConfigureAwait(false);
+                // Detect location via public IP geolocation (ip-api.com)
+                using var resp = await httpClient.GetAsync("http://ip-api.com/json").ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode) return;
+
+                await using var s = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(s).ConfigureAwait(false);
+
+                if (doc.RootElement.TryGetProperty("city", out var cityEl))
+                {
+                    var c = cityEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(c)) city = c;
+                }
+
+                if (doc.RootElement.TryGetProperty("country", out var countryEl))
+                {
+                    var c = countryEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(c)) country = c;
+                }
+
+                if (doc.RootElement.TryGetProperty("lat", out var latEl) && doc.RootElement.TryGetProperty("lon", out var lonEl))
+                {
+                    if (latEl.TryGetDouble(out var lat) && lonEl.TryGetDouble(out var lon))
+                    {
+                        latitude = lat;
+                        longitude = lon;
+                    }
+                }
+            }
+            catch { /* ignore location failures and fallback to city/country */ }
+
+            // Refresh times using detected location (if available)
+            await RefreshPrayerTimesAsync(latitude, longitude).ConfigureAwait(false);
+        }
+
+        // If lat/lon provided use that endpoint; otherwise fallback to timingsByCity
+        private async Task RefreshPrayerTimesAsync(double? lat = null, double? lon = null)
+        {
+            try
+            {
+                string url;
+                if (lat.HasValue && lon.HasValue)
+                {
+                    url = $"https://api.aladhan.com/v1/timings?latitude={lat.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={lon.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&method=2";
+                }
+                else
+                {
+                    url = $"https://api.aladhan.com/v1/timingsByCity?city={Uri.EscapeDataString(city)}&country={Uri.EscapeDataString(country)}&method=2";
+                }
+
+                using var resp = await httpClient.GetAsync(url).ConfigureAwait(false);
                 if (!resp.IsSuccessStatusCode) return;
 
                 await using var s = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -272,7 +402,7 @@ namespace DramaticAdhan
                     }
                 }
             }
-            catch { }
+            catch { /* keep previous times on failure */ }
         }
 
         private void ShowLocationDialog()
@@ -301,6 +431,8 @@ namespace DramaticAdhan
             {
                 city = txtCity.Text.Trim();
                 country = txtCountry.Text.Trim();
+                latitude = null;
+                longitude = null;
                 _ = RefreshPrayerTimesAsync();
             }
         }
@@ -338,6 +470,7 @@ namespace DramaticAdhan
             uiTimer?.Stop();
             uiTimer?.Dispose();
             refreshCts?.Cancel();
+            try { notifyIcon?.Dispose(); } catch { }
             base.OnFormClosed(e);
         }
     }
