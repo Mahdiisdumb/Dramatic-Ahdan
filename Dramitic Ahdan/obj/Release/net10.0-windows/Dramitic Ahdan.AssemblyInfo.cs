@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Dramitic Ahdan")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+800100321227183c1e1c471e2aeeac2cd497ade3")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9ab8efd0c1b365a81cbc193e8206a8346e27b9a6")]
 [assembly: System.Reflection.AssemblyProductAttribute("Dramitic Ahdan")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Dramitic Ahdan")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

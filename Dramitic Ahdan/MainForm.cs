@@ -45,6 +45,9 @@ namespace DramaticAdhan
         // Prayers in canonical order
         private readonly string[] prayerOrder = new[] { "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha" };
 
+        // When true allow the form to actually close (Exit from tray menu)
+        private bool allowExit = false;
+
         public MainForm()
         {
             InitializeComponent();
@@ -91,6 +94,9 @@ namespace DramaticAdhan
 
             // Tray icon + menu
             SetupNotifyIcon();
+
+            // Ensure minimize-on-minimize-button behavior
+            Resize += MainForm_Resize;
 
             LoadAssets();
 
@@ -149,7 +155,12 @@ namespace DramaticAdhan
             ctx.Items.Add(showItem);
 
             var exitItem = new ToolStripMenuItem("Exit");
-            exitItem.Click += (s, e) => Application.Exit();
+            // Make Exit set allowExit and close the form so normal shutdown proceeds.
+            exitItem.Click += (s, e) =>
+            {
+                allowExit = true;
+                Close();
+            };
             ctx.Items.Add(exitItem);
 
             notifyIcon.ContextMenuStrip = ctx;
@@ -161,8 +172,10 @@ namespace DramaticAdhan
         {
             try
             {
+                // keep notify icon visible and hide the window
                 Hide();
                 ShowInTaskbar = false;
+                WindowState = FormWindowState.Minimized;
             }
             catch { }
         }
@@ -177,6 +190,15 @@ namespace DramaticAdhan
                 Activate();
             }
             catch { }
+        }
+
+        private void MainForm_Resize(object? sender, EventArgs e)
+        {
+            // When the user minimizes the window, move it to tray instead of taskbar
+            if (WindowState == FormWindowState.Minimized)
+            {
+                MinimizeToTray();
+            }
         }
 
         private void LoadAssets()
@@ -463,6 +485,19 @@ namespace DramaticAdhan
             }
 
             base.OnKeyDown(e);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            // Prevent the form from closing unless the user chose Exit from the tray menu.
+            if (!allowExit)
+            {
+                e.Cancel = true;
+                MinimizeToTray();
+                return;
+            }
+
+            base.OnFormClosing(e);
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
