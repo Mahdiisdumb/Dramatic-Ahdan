@@ -16,16 +16,17 @@ namespace DramaticAdhan
         private System.Windows.Forms.Timer? uiTimer;
         private NotifyIcon? notifyIcon;
 
-        // UI for countdown
+        // UI
         private readonly Label lblNextPrayer;
         private readonly Label lblCountdown;
         private readonly Button btnRefreshNow;
         private readonly Button btnSettings;
 
-        // Prayer times fetched from API (per-day DateTime values)
+        // Prayer times
         private readonly Dictionary<string, DateTime> prayerTimes = new(StringComparer.OrdinalIgnoreCase);
+        private readonly string[] prayerOrder = { "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha" };
 
-        // Asset lists
+        // Assets
         private readonly List<Image> backgroundImages = new();
         private readonly List<string> wavFiles = new();
 
@@ -35,17 +36,13 @@ namespace DramaticAdhan
         private double? latitude;
         private double? longitude;
 
-        // Http client reused
+        // Http client
         private static readonly HttpClient httpClient = new();
 
-        // Refresh schedule
+        // Background refresh
         private readonly TimeSpan refreshInterval = TimeSpan.FromHours(6);
         private CancellationTokenSource? refreshCts;
 
-        // Prayers in canonical order
-        private readonly string[] prayerOrder = new[] { "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha" };
-
-        // When true allow the form to actually close (Exit from tray menu)
         private bool allowExit = false;
 
         public MainForm()
@@ -53,7 +50,7 @@ namespace DramaticAdhan
             InitializeComponent();
             KeyPreview = true;
 
-            // Create and style countdown labels
+            // Countdown labels
             lblNextPrayer = new Label
             {
                 AutoSize = true,
@@ -74,13 +71,14 @@ namespace DramaticAdhan
             };
             Controls.Add(lblCountdown);
 
+            // Buttons
             btnRefreshNow = new Button
             {
                 Text = "Refresh Times",
                 Location = new Point(20, 92),
                 AutoSize = true
             };
-            btnRefreshNow.Click += async (s, e) => await RefreshPrayerTimesAsync().ConfigureAwait(true);
+            btnRefreshNow.Click += async (_, _) => await RefreshPrayerTimesAsync();
             Controls.Add(btnRefreshNow);
 
             btnSettings = new Button
@@ -89,46 +87,41 @@ namespace DramaticAdhan
                 Location = new Point(150, 92),
                 AutoSize = true
             };
-            btnSettings.Click += (s, e) => ShowLocationDialog();
+            btnSettings.Click += (_, _) => ShowLocationDialog();
             Controls.Add(btnSettings);
 
-            // Tray icon + menu
+            // Tray icon
             SetupNotifyIcon();
 
-            // Ensure minimize-on-minimize-button behavior
-            Resize += MainForm_Resize;
+            // Minimize-on-minimize behavior
+            Resize += (_, __) => { if (WindowState == FormWindowState.Minimized) MinimizeToTray(); };
 
+            // Load assets
             LoadAssets();
 
-            // Start background tasks
+            // Background tasks
             StartBackgroundRefresh();
 
-            // Start UI timer
+            // UI timer
             StartUiTimer();
 
-            // Detect location and refresh on startup (fire-and-forget)
+            // Detect location & refresh on startup
             _ = DetectLocationAndRefreshAsync();
 
-            // Show a load message then minimize to tray when form is first shown
-            Shown += MainForm_Shown;
-        }
-
-        private void MainForm_Shown(object? sender, EventArgs e)
-        {
-            try
+            // Minimize to tray on startup
+            Shown += (_, __) =>
             {
-                notifyIcon?.ShowBalloonTip(
-                    5000,
-                    "Dramatic Adhan",
-                    "The app is running in the background. Double-click the tray icon to open.",
-                    ToolTipIcon.Info);
-            }
-            catch
-            {
-                // ignore if balloon tip not supported
-            }
-
-            MinimizeToTray();
+                try
+                {
+                    notifyIcon?.ShowBalloonTip(
+                        5000,
+                        "Dramatic Adhan",
+                        "The app is running in the background. Double-click the tray icon to open.",
+                        ToolTipIcon.Info);
+                }
+                catch { }
+                MinimizeToTray();
+            };
         }
 
         private void SetupNotifyIcon()
@@ -138,25 +131,15 @@ namespace DramaticAdhan
                 Visible = true,
                 Text = "Dramatic Adhan"
             };
-
-            // Try to use form icon if present
-            try
-            {
-                if (this.Icon != null) notifyIcon.Icon = this.Icon;
-            }
-            catch { /* ignore */ }
+            try { if (Icon != null) notifyIcon.Icon = Icon; } catch { }
 
             var ctx = new ContextMenuStrip();
-            var showItem = new ToolStripMenuItem("Show")
-            {
-                Enabled = true
-            };
-            showItem.Click += (s, e) => RestoreFromTray();
+            var showItem = new ToolStripMenuItem("Show");
+            showItem.Click += (_, __) => RestoreFromTray();
             ctx.Items.Add(showItem);
 
             var exitItem = new ToolStripMenuItem("Exit");
-            // Make Exit set allowExit and close the form so normal shutdown proceeds.
-            exitItem.Click += (s, e) =>
+            exitItem.Click += (_, __) =>
             {
                 allowExit = true;
                 Close();
@@ -164,66 +147,41 @@ namespace DramaticAdhan
             ctx.Items.Add(exitItem);
 
             notifyIcon.ContextMenuStrip = ctx;
-
-            notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+            notifyIcon.DoubleClick += (_, __) => RestoreFromTray();
         }
 
         private void MinimizeToTray()
         {
-            try
-            {
-                // keep notify icon visible and hide the window
-                Hide();
-                ShowInTaskbar = false;
-                WindowState = FormWindowState.Minimized;
-            }
-            catch { }
+            Hide();
+            ShowInTaskbar = false;
+            WindowState = FormWindowState.Minimized;
         }
 
         private void RestoreFromTray()
         {
-            try
-            {
-                Show();
-                WindowState = FormWindowState.Normal;
-                ShowInTaskbar = true;
-                Activate();
-            }
-            catch { }
-        }
-
-        private void MainForm_Resize(object? sender, EventArgs e)
-        {
-            // When the user minimizes the window, move it to tray instead of taskbar
-            if (WindowState == FormWindowState.Minimized)
-            {
-                MinimizeToTray();
-            }
+            Show();
+            WindowState = FormWindowState.Normal;
+            ShowInTaskbar = true;
+            Activate();
         }
 
         private void LoadAssets()
         {
             try
             {
-                string exeDir = AppContext.BaseDirectory;
-                string assetsDir = Path.Combine(exeDir, "assets");
-                if (!Directory.Exists(assetsDir))
-                {
-                    Directory.CreateDirectory(assetsDir);
-                    return;
-                }
+                string assetsDir = Path.Combine(AppContext.BaseDirectory, "assets");
+                if (!Directory.Exists(assetsDir)) Directory.CreateDirectory(assetsDir);
 
-                var imageFiles = Directory.EnumerateFiles(assetsDir, "*.*")
+                var images = Directory.EnumerateFiles(assetsDir, "*.*")
                     .Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
                              || f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
                              || f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase));
-                foreach (var img in imageFiles)
+                foreach (var img in images)
                 {
                     try { backgroundImages.Add(Image.FromFile(img)); } catch { }
                 }
 
-                var wavs = Directory.EnumerateFiles(assetsDir, "*.wav", SearchOption.TopDirectoryOnly);
-                wavFiles.AddRange(wavs);
+                wavFiles.AddRange(Directory.EnumerateFiles(assetsDir, "*.wav", SearchOption.TopDirectoryOnly));
             }
             catch { }
         }
@@ -231,62 +189,35 @@ namespace DramaticAdhan
         private void StartUiTimer()
         {
             uiTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            uiTimer.Tick += UiTimer_Tick;
+            uiTimer.Tick += async (_, __) => await UpdateCountdownLabelsAsync();
             uiTimer.Start();
-            _ = UpdateCountdownLabelsAsync();
-        }
-
-        private async void UiTimer_Tick(object? sender, EventArgs e)
-        {
-            await UpdateCountdownLabelsAsync().ConfigureAwait(true);
         }
 
         private async Task UpdateCountdownLabelsAsync()
         {
             if (prayerTimes.Count == 0)
             {
-                await RefreshPrayerTimesAsync().ConfigureAwait(true);
+                await RefreshPrayerTimesAsync();
             }
 
-            var now = DateTime.Now;
-            var next = GetNextPrayerDateTime(now);
+            DateTime now = DateTime.Now;
+            (string? Name, DateTime Time) next;
+            lock (prayerTimes) next = GetNextPrayerDateTime(now);
+
             if (next.Name == null)
             {
-                if (InvokeRequired)
-                {
-                    Invoke(() =>
-                    {
-                        lblNextPrayer.Text = "Next: --";
-                        lblCountdown.Text = "--:--:--";
-                    });
-                }
-                else
-                {
-                    lblNextPrayer.Text = "Next: --";
-                    lblCountdown.Text = "--:--:--";
-                }
+                lblNextPrayer.Text = "Next: --";
+                lblCountdown.Text = "--:--:--";
                 return;
             }
 
-            var remaining = next.Time - now;
+            TimeSpan remaining = next.Time - now;
             if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
 
-            if (InvokeRequired)
-            {
-                Invoke(() =>
-                {
-                    lblNextPrayer.Text = $"Next: {next.Name} ({next.Time:yyyy-MM-dd HH:mm:ss})";
-                    lblCountdown.Text = $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
-                });
-            }
-            else
-            {
-                lblNextPrayer.Text = $"Next: {next.Name} ({next.Time:yyyy-MM-dd HH:mm:ss})";
-                lblCountdown.Text = $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
-            }
+            lblNextPrayer.Text = $"Next: {next.Name} ({next.Time:yyyy-MM-dd HH:mm:ss})";
+            lblCountdown.Text = $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
 
-            // Trigger warning precisely when the next prayer time arrives (within the next second)
-            if (next.Time - now <= TimeSpan.FromSeconds(1) && next.Time - now >= TimeSpan.Zero)
+            if (remaining <= TimeSpan.FromSeconds(1))
             {
                 ShowWarning();
             }
@@ -294,22 +225,15 @@ namespace DramaticAdhan
 
         private (string? Name, DateTime Time) GetNextPrayerDateTime(DateTime now)
         {
-            lock (prayerTimes)
+            foreach (var name in prayerOrder)
             {
-                foreach (var name in prayerOrder)
-                {
-                    if (prayerTimes.TryGetValue(name, out var dt))
-                    {
-                        if (dt > now) return (name, dt);
-                    }
-                }
-
-                if (prayerTimes.TryGetValue(prayerOrder[0], out var firstToday))
-                {
-                    var candidate = firstToday.Date.AddDays(1) + firstToday.TimeOfDay;
-                    return (prayerOrder[0], candidate);
-                }
+                if (prayerTimes.TryGetValue(name, out var dt) && dt > now)
+                    return (name, dt);
             }
+
+            // Next day
+            if (prayerTimes.TryGetValue(prayerOrder[0], out var first))
+                return (prayerOrder[0], first.Date.AddDays(1) + first.TimeOfDay);
 
             return (null, DateTime.MaxValue);
         }
@@ -323,12 +247,12 @@ namespace DramaticAdhan
             {
                 try
                 {
-                    await RefreshPrayerTimesAsync().ConfigureAwait(false);
+                    await RefreshPrayerTimesAsync();
 
                     while (!refreshCts!.IsCancellationRequested)
                     {
-                        await Task.Delay(refreshInterval, refreshCts.Token).ConfigureAwait(false);
-                        await RefreshPrayerTimesAsync().ConfigureAwait(false);
+                        await Task.Delay(refreshInterval, refreshCts.Token);
+                        await RefreshPrayerTimesAsync();
                     }
                 }
                 catch (TaskCanceledException) { }
@@ -340,25 +264,22 @@ namespace DramaticAdhan
         {
             try
             {
-                // Detect location via public IP geolocation (ip-api.com)
-                using var resp = await httpClient.GetAsync("http://ip-api.com/json").ConfigureAwait(false);
+                using var resp = await httpClient.GetAsync("http://ip-api.com/json");
                 if (!resp.IsSuccessStatusCode) return;
 
-                await using var s = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-                using var doc = await JsonDocument.ParseAsync(s).ConfigureAwait(false);
+                await using var s = await resp.Content.ReadAsStreamAsync();
+                using var doc = await JsonDocument.ParseAsync(s);
 
                 if (doc.RootElement.TryGetProperty("city", out var cityEl))
                 {
                     var c = cityEl.GetString();
                     if (!string.IsNullOrWhiteSpace(c)) city = c;
                 }
-
                 if (doc.RootElement.TryGetProperty("country", out var countryEl))
                 {
                     var c = countryEl.GetString();
                     if (!string.IsNullOrWhiteSpace(c)) country = c;
                 }
-
                 if (doc.RootElement.TryGetProperty("lat", out var latEl) && doc.RootElement.TryGetProperty("lon", out var lonEl))
                 {
                     if (latEl.TryGetDouble(out var lat) && lonEl.TryGetDouble(out var lon))
@@ -368,13 +289,11 @@ namespace DramaticAdhan
                     }
                 }
             }
-            catch { /* ignore location failures and fallback to city/country */ }
+            catch { }
 
-            // Refresh times using detected location (if available)
-            await RefreshPrayerTimesAsync(latitude, longitude).ConfigureAwait(false);
+            await RefreshPrayerTimesAsync(latitude, longitude);
         }
 
-        // If lat/lon provided use that endpoint; otherwise fallback to timingsByCity
         private async Task RefreshPrayerTimesAsync(double? lat = null, double? lon = null)
         {
             try
@@ -383,20 +302,25 @@ namespace DramaticAdhan
                 if (lat.HasValue && lon.HasValue)
                 {
                     url = $"https://api.aladhan.com/v1/timings?latitude={lat.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={lon.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&method=2";
+                    latitude = lat;
+                    longitude = lon;
+                }
+                else if (latitude.HasValue && longitude.HasValue)
+                {
+                    url = $"https://api.aladhan.com/v1/timings?latitude={latitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&longitude={longitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}&method=2";
                 }
                 else
                 {
                     url = $"https://api.aladhan.com/v1/timingsByCity?city={Uri.EscapeDataString(city)}&country={Uri.EscapeDataString(country)}&method=2";
                 }
 
-                using var resp = await httpClient.GetAsync(url).ConfigureAwait(false);
+                using var resp = await httpClient.GetAsync(url);
                 if (!resp.IsSuccessStatusCode) return;
 
-                await using var s = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-                using var doc = await JsonDocument.ParseAsync(s).ConfigureAwait(false);
+                await using var s = await resp.Content.ReadAsStreamAsync();
+                using var doc = await JsonDocument.ParseAsync(s);
 
-                if (!doc.RootElement.TryGetProperty("data", out var dataEl)) return;
-                if (!dataEl.TryGetProperty("timings", out var timingsEl)) return;
+                if (!doc.RootElement.TryGetProperty("data", out var dataEl) || !dataEl.TryGetProperty("timings", out var timingsEl)) return;
 
                 var today = DateTime.Now.Date;
                 var newTimes = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
@@ -409,10 +333,7 @@ namespace DramaticAdhan
 
                     var clean = str.Split(' ')[0].Trim();
                     if (TimeSpan.TryParse(clean, out var ts))
-                    {
-                        var dt = today + ts;
-                        newTimes[name] = dt;
-                    }
+                        newTimes[name] = today + ts;
                 }
 
                 if (newTimes.Count > 0)
@@ -420,11 +341,15 @@ namespace DramaticAdhan
                     lock (prayerTimes)
                     {
                         prayerTimes.Clear();
-                        foreach (var kv in newTimes) prayerTimes[kv.Key] = kv.Value;
+                        foreach (var kv in newTimes)
+                            prayerTimes[kv.Key] = kv.Value;
                     }
                 }
             }
-            catch { /* keep previous times on failure */ }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to refresh prayer times: {ex}");
+            }
         }
 
         private void ShowLocationDialog()
@@ -463,12 +388,10 @@ namespace DramaticAdhan
         {
             var images = backgroundImages.ToList();
             var wavs = wavFiles.ToList();
-
             var w = new WarningForm(images, wavs);
             w.Show();
         }
 
-        // Debug key: Ctrl+Shift+D -> show warning immediately
         protected override void OnKeyDown(KeyEventArgs e)
         {
             if (e.Control && e.Shift && e.KeyCode == Keys.D)
@@ -478,25 +401,18 @@ namespace DramaticAdhan
                 return;
             }
 
-            if (e.KeyCode == Keys.Escape)
-            {
-                Close();
-                return;
-            }
-
+            if (e.KeyCode == Keys.Escape) Close();
             base.OnKeyDown(e);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // Prevent the form from closing unless the user chose Exit from the tray menu.
             if (!allowExit)
             {
                 e.Cancel = true;
                 MinimizeToTray();
                 return;
             }
-
             base.OnFormClosing(e);
         }
 
@@ -505,7 +421,7 @@ namespace DramaticAdhan
             uiTimer?.Stop();
             uiTimer?.Dispose();
             refreshCts?.Cancel();
-            try { notifyIcon?.Dispose(); } catch { }
+            notifyIcon?.Dispose();
             base.OnFormClosed(e);
         }
     }

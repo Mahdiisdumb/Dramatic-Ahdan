@@ -19,31 +19,31 @@ namespace DramaticAdhan
 
             var main = new MainForm();
 
-            // Prefer "./ico.png" (exe dir then current dir). If found, convert PNG -> Icon and set form icon.
-            var candidates = new[]
+            // Look for ico.png in exe dir or current dir
+            string[] candidates =
             {
                 Path.Combine(AppContext.BaseDirectory, "ico.png"),
-                Path.Combine(Environment.CurrentDirectory, "ico.png"),
-                "ico.png"
+                Path.Combine(Environment.CurrentDirectory, "ico.png")
             };
 
             foreach (var path in candidates)
             {
+                if (!File.Exists(path)) continue;
+
                 try
                 {
-                    if (!File.Exists(path)) continue;
-
                     using var bmp = new Bitmap(path);
                     IntPtr hIcon = bmp.GetHicon();
-                    using var tempIcon = Icon.FromHandle(hIcon);
-                    // Clone so we can destroy the native handle immediately
-                    main.Icon = (Icon)tempIcon.Clone();
+
+                    // Clone to managed Icon before destroying handle
+                    main.Icon = Icon.FromHandle(hIcon).Clone() as Icon;
                     DestroyIcon(hIcon);
-                    break;
+
+                    break; // stop after first successful load
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignore and continue to next candidate
+                    Console.WriteLine($"Failed to load icon '{path}': {ex.Message}");
                 }
             }
 
