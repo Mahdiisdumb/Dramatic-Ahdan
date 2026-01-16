@@ -19,32 +19,27 @@ namespace DramaticAdhan
 
             var main = new MainForm();
 
-            // Look for ico.png in exe dir or current dir
+            // Load application icon
             string[] candidates =
             {
                 Path.Combine(AppContext.BaseDirectory, "ico.png"),
-                Path.Combine(Environment.CurrentDirectory, "ico.png")
+                Path.Combine(Environment.CurrentDirectory, "ico.png"),
+                "ico.ico"
             };
 
             foreach (var path in candidates)
             {
-                if (!File.Exists(path)) continue;
-
                 try
                 {
+                    if (!File.Exists(path)) continue;
+
                     using var bmp = new Bitmap(path);
                     IntPtr hIcon = bmp.GetHicon();
-
-                    // Clone to managed Icon before destroying handle
                     main.Icon = Icon.FromHandle(hIcon).Clone() as Icon;
                     DestroyIcon(hIcon);
-
-                    break; // stop after first successful load
+                    break;
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Failed to load icon '{path}': {ex.Message}");
-                }
+                catch { }
             }
 
             Application.Run(main);
