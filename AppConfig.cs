@@ -6,35 +6,44 @@ namespace DramaticAdhan
 {
     public class AppConfig
     {
+        public bool IsFirstRun { get; set; } = true;
+
         public string City { get; set; } = "Mecca";
         public string Country { get; set; } = "Saudi Arabia";
+
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
 
-        public static string GetConfigPath() =>
-            Path.Combine(AppContext.BaseDirectory, "config.json");
+        public bool IsShia { get; set; } = false;
 
-        public void Save()
-        {
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            File.WriteAllText(GetConfigPath(), JsonSerializer.Serialize(this, options));
-        }
+        private static string ConfigPath =>
+            Path.Combine(AppContext.BaseDirectory, "config.json");
 
         public static AppConfig Load()
         {
-            string path = GetConfigPath();
-            if (!File.Exists(path))
-                return new AppConfig();
-
             try
             {
-                string json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
+                if (File.Exists(ConfigPath))
+                    return JsonSerializer.Deserialize<AppConfig>(
+                        File.ReadAllText(ConfigPath)) ?? new AppConfig();
             }
-            catch
+            catch { }
+
+            return new AppConfig();
+        }
+
+        public void Save()
+        {
+            try
             {
-                return new AppConfig();
+                File.WriteAllText(
+                    ConfigPath,
+                    JsonSerializer.Serialize(this, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    }));
             }
+            catch { }
         }
     }
 }

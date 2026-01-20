@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.IO;
 
 namespace DramaticAdhan
 {
@@ -20,8 +20,11 @@ namespace DramaticAdhan
         private readonly Button btnRefreshNow;
         private readonly Button btnSettings;
 
-        private readonly Dictionary<string, DateTime> prayerTimes = new(StringComparer.OrdinalIgnoreCase);
-        private readonly string[] prayerOrder = new[] { "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha" };
+        private readonly Dictionary<string, DateTime> prayerTimes =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly string[] prayerOrder =
+            { "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha" };
 
         private readonly List<Image> backgroundImages = new();
         private readonly List<string> wavFiles = new();
@@ -31,8 +34,7 @@ namespace DramaticAdhan
         private CancellationTokenSource? refreshCts;
 
         private bool allowExit = false;
-
-        private AppConfig config;
+        private readonly AppConfig config;
 
         public MainForm()
         {
@@ -45,39 +47,42 @@ namespace DramaticAdhan
             {
                 AutoSize = true,
                 Font = new Font("Segoe UI", 16F, FontStyle.Bold),
-                ForeColor = Color.Black,
                 Location = new Point(20, 20),
                 Text = "Next: --"
             };
-            Controls.Add(lblNextPrayer);
 
             lblCountdown = new Label
             {
                 AutoSize = true,
-                Font = new Font("Segoe UI", 14F, FontStyle.Regular),
-                ForeColor = Color.DarkBlue,
-                Location = new Point(20, 52),
-                Text = "00:00:00"
+                Font = new Font("Segoe UI", 14F),
+                Location = new Point(20, 55),
+                Text = "--:--:--"
             };
-            Controls.Add(lblCountdown);
 
             btnRefreshNow = new Button
             {
                 Text = "Refresh Times",
-                Location = new Point(20, 92),
+                Location = new Point(20, 95),
                 AutoSize = true
             };
-            btnRefreshNow.Click += async (s, e) => await RefreshPrayerTimesAsync().ConfigureAwait(true);
-            Controls.Add(btnRefreshNow);
+            btnRefreshNow.Click += async (_, _) =>
+                await RefreshPrayerTimesAsync().ConfigureAwait(true);
 
             btnSettings = new Button
             {
                 Text = "Location",
-                Location = new Point(150, 92),
+                Location = new Point(150, 95),
                 AutoSize = true
             };
-            btnSettings.Click += (s, e) => ShowLocationDialog();
-            Controls.Add(btnSettings);
+            btnSettings.Click += (_, _) => ShowLocationDialog();
+
+            Controls.AddRange(new Control[]
+            {
+                lblNextPrayer,
+                lblCountdown,
+                btnRefreshNow,
+                btnSettings
+            });
 
             SetupNotifyIcon();
             Resize += MainForm_Resize;
@@ -87,67 +92,45 @@ namespace DramaticAdhan
             StartUiTimer();
             _ = DetectLocationAndRefreshAsync();
 
-            Shown += MainForm_Shown;
+            Shown += (_, _) => MinimizeToTray();
         }
 
-        private void MainForm_Shown(object? sender, EventArgs e)
-        {
-            try
-            {
-                notifyIcon?.ShowBalloonTip(
-                    5000,
-                    "Dramatic Adhan",
-                    "The app is running in the background. Double-click the tray icon to open.",
-                    ToolTipIcon.Info);
-            }
-            catch { }
-
-            MinimizeToTray();
-        }
+        // ===================== TRAY =====================
 
         private void SetupNotifyIcon()
         {
-            notifyIcon = new NotifyIcon { Visible = true, Text = "Dramatic Adhan" };
-            try { if (Icon != null) notifyIcon.Icon = Icon; } catch { }
+            notifyIcon = new NotifyIcon
+            {
+                Visible = true,
+                Text = "Dramatic Adhan",
+                Icon = Icon
+            };
 
             var ctx = new ContextMenuStrip();
-            var showItem = new ToolStripMenuItem("Show");
-            showItem.Click += (s, e) => RestoreFromTray();
-            ctx.Items.Add(showItem);
-
-            var exitItem = new ToolStripMenuItem("Exit");
-            exitItem.Click += (s, e) =>
+            ctx.Items.Add("Show", null, (_, _) => RestoreFromTray());
+            ctx.Items.Add("Exit", null, (_, _) =>
             {
                 allowExit = true;
                 Close();
-            };
-            ctx.Items.Add(exitItem);
+            });
 
             notifyIcon.ContextMenuStrip = ctx;
-            notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+            notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
         }
 
         private void MinimizeToTray()
         {
-            try
-            {
-                Hide();
-                ShowInTaskbar = false;
-                WindowState = FormWindowState.Minimized;
-            }
-            catch { }
+            Hide();
+            ShowInTaskbar = false;
+            WindowState = FormWindowState.Minimized;
         }
 
         private void RestoreFromTray()
         {
-            try
-            {
-                Show();
-                WindowState = FormWindowState.Normal;
-                ShowInTaskbar = true;
-                Activate();
-            }
-            catch { }
+            Show();
+            WindowState = FormWindowState.Normal;
+            ShowInTaskbar = true;
+            Activate();
         }
 
         private void MainForm_Resize(object? sender, EventArgs e)
@@ -156,31 +139,34 @@ namespace DramaticAdhan
                 MinimizeToTray();
         }
 
+        // ===================== ASSETS =====================
+
         private void LoadAssets()
         {
             try
             {
-                string exeDir = AppContext.BaseDirectory;
-                string assetsDir = Path.Combine(exeDir, "assets");
-                if (!Directory.Exists(assetsDir)) Directory.CreateDirectory(assetsDir);
+                string dir = Path.Combine(AppContext.BaseDirectory, "assets");
+                Directory.CreateDirectory(dir);
 
-                foreach (var f in Directory.EnumerateFiles(assetsDir, "*.png"))
+                foreach (var f in Directory.GetFiles(dir, "*.png"))
                     backgroundImages.Add(Image.FromFile(f));
 
-                foreach (var f in Directory.EnumerateFiles(assetsDir, "*.jpg"))
+                foreach (var f in Directory.GetFiles(dir, "*.jpg"))
                     backgroundImages.Add(Image.FromFile(f));
 
-                wavFiles.AddRange(Directory.EnumerateFiles(assetsDir, "*.wav"));
+                wavFiles.AddRange(Directory.GetFiles(dir, "*.wav"));
             }
             catch { }
         }
 
+        // ===================== TIMERS =====================
+
         private void StartUiTimer()
         {
             uiTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            uiTimer.Tick += async (s, e) => await UpdateCountdownLabelsAsync().ConfigureAwait(true);
+            uiTimer.Tick += async (_, _) =>
+                await UpdateCountdownLabelsAsync().ConfigureAwait(true);
             uiTimer.Start();
-            _ = UpdateCountdownLabelsAsync();
         }
 
         private async Task UpdateCountdownLabelsAsync()
@@ -190,6 +176,7 @@ namespace DramaticAdhan
 
             var now = DateTime.Now;
             var next = GetNextPrayerDateTime(now);
+
             if (next.Name == null)
             {
                 lblNextPrayer.Text = "Next: --";
@@ -198,30 +185,55 @@ namespace DramaticAdhan
             }
 
             var remaining = next.Time - now;
-            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+            if (remaining < TimeSpan.Zero)
+                remaining = TimeSpan.Zero;
 
-            lblNextPrayer.Text = $"Next: {next.Name} ({next.Time:HH:mm})";
-            lblCountdown.Text = $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+            lblNextPrayer.Text =
+                $"Next: {next.Name} ({next.Time:HH:mm})";
+
+            lblCountdown.Text =
+                $"{(int)remaining.TotalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
 
             if (remaining <= TimeSpan.FromSeconds(1))
                 ShowWarning();
         }
 
-        private (string? Name, DateTime Time) GetNextPrayerDateTime(DateTime now)
+        // ===================== SHIA DAY LOGIC =====================
+
+        private (string? Name, DateTime Time)
+            GetNextPrayerDateTime(DateTime now)
         {
+            DateTime dayBase;
+
+            if (config.IsShia)
+            {
+                // Shia day begins at sunset (~18:00)
+                dayBase = DateTime.Today.AddHours(18);
+                if (now < dayBase)
+                    dayBase = dayBase.AddDays(-1);
+            }
+            else
+            {
+                dayBase = DateTime.Today;
+            }
+
             lock (prayerTimes)
             {
                 foreach (var name in prayerOrder)
                 {
-                    if (prayerTimes.TryGetValue(name, out var dt) && dt > now)
-                        return (name, dt);
+                    if (prayerTimes.TryGetValue(name, out var t) && t > now)
+                        return (name, t);
                 }
 
-                if (prayerTimes.TryGetValue(prayerOrder[0], out var firstToday))
-                    return (prayerOrder[0], firstToday.Date.AddDays(1) + firstToday.TimeOfDay);
+                if (prayerTimes.TryGetValue(prayerOrder[0], out var first))
+                    return (prayerOrder[0],
+                        dayBase.AddDays(1) + first.TimeOfDay);
             }
+
             return (null, DateTime.MaxValue);
         }
+
+        // ===================== NETWORK =====================
 
         private void StartBackgroundRefresh()
         {
@@ -230,134 +242,112 @@ namespace DramaticAdhan
 
             _ = Task.Run(async () =>
             {
-                try
+                while (!refreshCts.IsCancellationRequested)
                 {
-                    await RefreshPrayerTimesAsync().ConfigureAwait(false);
-                    while (!refreshCts!.IsCancellationRequested)
-                    {
-                        await Task.Delay(refreshInterval, refreshCts.Token).ConfigureAwait(false);
-                        await RefreshPrayerTimesAsync().ConfigureAwait(false);
-                    }
+                    await RefreshPrayerTimesAsync();
+                    await Task.Delay(refreshInterval, refreshCts.Token);
                 }
-                catch { }
-            }, refreshCts.Token);
+            });
         }
+protected override void OnKeyDown(KeyEventArgs e)
+{
+    // DEBUG: force adhan warning
+    if (e.Control && e.Shift && e.KeyCode == Keys.D)
+    {
+        ShowWarning();
+        e.Handled = true;
+        return;
+    }
 
+    // Quick exit / minimize
+    if (e.KeyCode == Keys.Escape)
+    {
+        Close();
+        e.Handled = true;
+        return;
+    }
+
+    base.OnKeyDown(e);
+}
         private async Task DetectLocationAndRefreshAsync()
         {
             try
             {
                 if (config.Latitude.HasValue && config.Longitude.HasValue)
                 {
-                    await RefreshPrayerTimesAsync(config.Latitude, config.Longitude);
+                    await RefreshPrayerTimesAsync(
+                        config.Latitude, config.Longitude);
                     return;
                 }
 
-                using var resp = await httpClient.GetAsync("http://ip-api.com/json");
-                if (!resp.IsSuccessStatusCode) return;
+                var r = await httpClient.GetAsync("http://ip-api.com/json");
+                if (!r.IsSuccessStatusCode) return;
 
-                await using var s = await resp.Content.ReadAsStreamAsync();
-                using var doc = await JsonDocument.ParseAsync(s);
+                using var s = await r.Content.ReadAsStreamAsync();
+                using var j = await JsonDocument.ParseAsync(s);
 
-                if (doc.RootElement.TryGetProperty("city", out var cityEl))
-                    config.City = cityEl.GetString() ?? config.City;
-
-                if (doc.RootElement.TryGetProperty("country", out var countryEl))
-                    config.Country = countryEl.GetString() ?? config.Country;
-
-                if (doc.RootElement.TryGetProperty("lat", out var latEl) &&
-                    doc.RootElement.TryGetProperty("lon", out var lonEl))
+                if (j.RootElement.TryGetProperty("lat", out var lat) &&
+                    j.RootElement.TryGetProperty("lon", out var lon))
                 {
-                    if (latEl.TryGetDouble(out var lat) && lonEl.TryGetDouble(out var lon))
-                    {
-                        config.Latitude = lat;
-                        config.Longitude = lon;
-                    }
+                    config.Latitude = lat.GetDouble();
+                    config.Longitude = lon.GetDouble();
+                    config.Save();
                 }
-
-                config.Save();
             }
             catch { }
 
-            await RefreshPrayerTimesAsync(config.Latitude, config.Longitude);
+            await RefreshPrayerTimesAsync(
+                config.Latitude, config.Longitude);
         }
 
-        private async Task RefreshPrayerTimesAsync(double? lat = null, double? lon = null)
+        private async Task RefreshPrayerTimesAsync(
+            double? lat = null, double? lon = null)
         {
             try
             {
-                string url;
-                if (lat.HasValue && lon.HasValue)
-                    url = $"https://api.aladhan.com/v1/timings?latitude={lat.Value}&longitude={lon.Value}&method=2";
-                else
-                    url = $"https://api.aladhan.com/v1/timingsByCity?city={Uri.EscapeDataString(config.City)}&country={Uri.EscapeDataString(config.Country)}&method=2";
+                string url =
+                    lat.HasValue && lon.HasValue
+                        ? $"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}&method=0"
+                        : $"https://api.aladhan.com/v1/timingsByCity?city={config.City}&country={config.Country}&method=0";
 
-                using var resp = await httpClient.GetAsync(url);
-                if (!resp.IsSuccessStatusCode) return;
+                var r = await httpClient.GetAsync(url);
+                if (!r.IsSuccessStatusCode) return;
 
-                await using var s = await resp.Content.ReadAsStreamAsync();
-                using var doc = await JsonDocument.ParseAsync(s);
+                using var s = await r.Content.ReadAsStreamAsync();
+                using var j = await JsonDocument.ParseAsync(s);
 
-                if (!doc.RootElement.TryGetProperty("data", out var dataEl)) return;
-                if (!dataEl.TryGetProperty("timings", out var timingsEl)) return;
+                var timings =
+                    j.RootElement.GetProperty("data").GetProperty("timings");
 
-                var today = DateTime.Now.Date;
-                var newTimes = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+                var today = DateTime.Today;
+                var newTimes = new Dictionary<string, DateTime>();
 
-                foreach (var name in prayerOrder)
+                foreach (var p in prayerOrder)
                 {
-                    if (!timingsEl.TryGetProperty(name, out var tVal)) continue;
-                    var str = tVal.GetString()?.Split(' ')[0];
-                    if (str == null) continue;
-
-                    if (TimeSpan.TryParse(str, out var ts))
-                        newTimes[name] = today + ts;
+                    if (!timings.TryGetProperty(p, out var v)) continue;
+                    if (TimeSpan.TryParse(v.GetString()?.Split(' ')[0], out var ts))
+                        newTimes[p] = today + ts;
                 }
 
-                if (newTimes.Count > 0)
+                lock (prayerTimes)
                 {
-                    lock (prayerTimes)
-                    {
-                        prayerTimes.Clear();
-                        foreach (var kv in newTimes) prayerTimes[kv.Key] = kv.Value;
-                    }
+                    prayerTimes.Clear();
+                    foreach (var kv in newTimes)
+                        prayerTimes[kv.Key] = kv.Value;
                 }
             }
             catch { }
         }
 
+        // ===================== UI =====================
+
         private void ShowLocationDialog()
         {
-            using var dlg = new Form
-            {
-                Text = "Set Location",
-                ClientSize = new Size(360, 140),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent
-            };
-
-            var lblCity = new Label { Text = "City:", Location = new Point(12, 15), AutoSize = true };
-            var txtCity = new TextBox { Text = config.City, Location = new Point(80, 12), Width = 260 };
-            var lblCountry = new Label { Text = "Country:", Location = new Point(12, 48), AutoSize = true };
-            var txtCountry = new TextBox { Text = config.Country, Location = new Point(80, 45), Width = 260 };
-
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(170, 90) };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(255, 90) };
-
-            dlg.Controls.AddRange(new Control[] { lblCity, txtCity, lblCountry, txtCountry, ok, cancel });
-            dlg.AcceptButton = ok;
-            dlg.CancelButton = cancel;
-
-            if (dlg.ShowDialog(this) == DialogResult.OK)
-            {
-                config.City = txtCity.Text.Trim();
-                config.Country = txtCountry.Text.Trim();
-                config.Latitude = null;
-                config.Longitude = null;
-                config.Save();
-
-                _ = RefreshPrayerTimesAsync();
-            }
+            MessageBox.Show(
+                "Location changes require restarting setup.\nDelete config.json.",
+                "Info",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         private void ShowWarning()
@@ -366,12 +356,7 @@ namespace DramaticAdhan
             w.Show();
         }
 
-        protected override void OnKeyDown(KeyEventArgs e)
-        {
-            if (e.Control && e.Shift && e.KeyCode == Keys.D) ShowWarning();
-            if (e.KeyCode == Keys.Escape) Close();
-            base.OnKeyDown(e);
-        }
+        // ===================== EXIT =====================
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
@@ -387,9 +372,8 @@ namespace DramaticAdhan
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             uiTimer?.Stop();
-            uiTimer?.Dispose();
             refreshCts?.Cancel();
-            try { notifyIcon?.Dispose(); } catch { }
+            notifyIcon?.Dispose();
             base.OnFormClosed(e);
         }
     }
